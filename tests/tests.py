@@ -33,9 +33,9 @@ def cleanup_traitlet_singleton():
 def cleanup_fs():
     """Make sure we are running in Docker and have write access to the mount point"""
     # Make sure we have write access to /mnt/docker-test-xfs
-    assert os.access(
-        MOUNT_POINT, os.W_OK
-    ), f"This test must be run with write access to {MOUNT_POINT}"
+    assert os.access(MOUNT_POINT, os.W_OK), (
+        f"This test must be run with write access to {MOUNT_POINT}"
+    )
     # Clean-up homes
     clear_home_directories(MOUNT_POINT)
     yield
@@ -634,3 +634,22 @@ def test_project_clear(quota_manager):
     for name, projid in homedirs.items():
         path = os.path.join(MOUNT_POINT, name)
         assert applied_projects[path] == projid + 1000
+
+
+def test_complex_projid(quota_manager):
+    """
+    Test that we can exclude dirs from quota enforcement
+    """
+    quota_manager.paths = [MOUNT_POINT]
+
+    # Reconcile with basic home directories
+    create_home_directories(MOUNT_POINT, {r"user:name": 1001, "frob": 1002})
+    quota_manager.reconcile_step()
+
+    applied_quotas = quota_manager.get_applied_quotas()
+    print(applied_quotas)
+    assert applied_quotas[os.path.join(MOUNT_POINT, "user:name")] == {
+        "blocks": {"soft": 0, "hard": 1000, "used": 0},
+        "inodes": {"soft": 0, "hard": 0, "used": 1},
+        "realtime": {"soft": 0, "hard": 0, "used": 0},
+    }
