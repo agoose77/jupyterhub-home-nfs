@@ -35,17 +35,17 @@ from __future__ import annotations
 import contextlib
 import itertools
 import logging
-import escapism  # type: ignore
 import os
 import os.path
-import subprocess
 import pathlib
 import string
+import subprocess
 import sys
 import tempfile
-import typing
 import time
+import typing
 
+import escapism  # type: ignore
 from prometheus_client import start_http_server  # type: ignore
 from traitlets import Bool, Dict, Float, Int, List, Unicode, validate
 from traitlets.config import Application
