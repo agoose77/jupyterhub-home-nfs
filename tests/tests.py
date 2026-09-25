@@ -643,15 +643,19 @@ def test_complex_projid(quota_manager):
     quota_manager.paths = [MOUNT_POINT]
 
     # Reconcile with basic home directories
-    create_home_directories(MOUNT_POINT, {r"user:name": 1001, "frob": 1002})
+    project_dir_ids = {r"user:name": 1001, "frob foo bar": 1002}
+    create_home_directories(MOUNT_POINT, project_dir_ids)
+
     quota_manager.reconcile_step()
 
     applied_quotas = quota_manager.get_applied_quotas()
-    project_name = quota_manager.path_to_project_name(
-        os.path.join(MOUNT_POINT, "user:name")
-    )
-    assert applied_quotas[project_name] == {
-        "blocks": {"soft": 0, "hard": 1000, "used": 0},
-        "inodes": {"soft": 0, "hard": 0, "used": 1},
-        "realtime": {"soft": 0, "hard": 0, "used": 0},
-    }
+
+    for project_dir in project_dir_ids:
+        project_path = os.path.join(MOUNT_POINT, project_dir)
+
+        project_name = quota_manager.path_to_project_name(project_path)
+        assert applied_quotas[project_name] == {
+            "blocks": {"soft": 0, "hard": 1000, "used": 0},
+            "inodes": {"soft": 0, "hard": 0, "used": 1},
+            "realtime": {"soft": 0, "hard": 0, "used": 0},
+        }
