@@ -647,8 +647,10 @@ def test_complex_projid(quota_manager):
     quota_manager.reconcile_step()
 
     applied_quotas = quota_manager.get_applied_quotas()
-    print(applied_quotas)
-    assert applied_quotas[os.path.join(MOUNT_POINT, "user:name")] == {
+    project_name = quota_manager.path_to_project_name(
+        os.path.join(MOUNT_POINT, "user:name")
+    )
+    assert applied_quotas[project_name] == {
         "blocks": {"soft": 0, "hard": 1000, "used": 0},
         "inodes": {"soft": 0, "hard": 0, "used": 1},
         "realtime": {"soft": 0, "hard": 0, "used": 0},

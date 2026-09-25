@@ -47,7 +47,7 @@ import typing
 import time
 
 from prometheus_client import start_http_server  # type: ignore
-from traitlets import Bool, Dict, Float, Int, List, Unicode
+from traitlets import Bool, Dict, Float, Int, List, Unicode, validate
 from traitlets.config import Application
 
 from . import metrics
@@ -128,6 +128,9 @@ def logged_check_call(
 class QuotaManager(Application):
     # Config file can be loaded from this location
     config_file = Unicode("", help="The config file to load").tag(config=True)
+    escape_char = Unicode("&", help="The escape character for file paths").tag(
+        config=True
+    )
 
     # Define all configuration parameters as traitlets
     paths = List(
@@ -196,20 +199,26 @@ class QuotaManager(Application):
         "gid": "QuotaManager.gid",
     }
 
+    @validate("escape_char")
+    def _validate(self, proposal: dict) -> str:
+        if len(proposal["value"]) != 1:
+            raise ValueError("Expected length-1 string")
+        return proposal["value"]
+
     def path_to_project_name(self, path: PathLike) -> ProjectName:
         return typing.cast(
             ProjectName,
             escapism.escape(
                 str(path),
-                escape_char="*",
+                escape_char=self.escape_char,
                 safe=string.ascii_letters
                 + string.digits
-                + "".join(set(string.punctuation) - {"#", "*"}),
+                + "".join(set(string.punctuation) - {"#", self.escape_char, ":"}),
             ),
         )
 
     def project_name_to_path(self, name: ProjectName) -> pathlib.Path:
-        return pathlib.Path(escapism.unescape(name, escape_char="*"))
+        return pathlib.Path(escapism.unescape(name, escape_char=self.escape_char))
 
     def initialize(self, argv: list[str] | None = None) -> None:
         self.parse_command_line(argv)
@@ -257,17 +266,16 @@ class QuotaManager(Application):
         # Fetch existing home directories
         # Sort to provide consistent ordering across runs
         homedirs: list[ProjectName] = []
-        for project_name in self.paths:
+        for path in self.paths:
             # Create the directory if it doesn't exist and make sure is owned by uid:gid
-            os.makedirs(project_name, exist_ok=True)
-            os.chown(project_name, self.uid, self.gid)
-            for ent in os.scandir(project_name):
+            os.makedirs(path, exist_ok=True)
+            os.chown(path, self.uid, self.gid)
+            for ent in os.scandir(path):
                 if ent.is_dir():
                     if ent.name.startswith("."):
                         self.log.warning(f"Found hidden directory {ent.name}, ignoring")
                         continue
                     homedirs.append(self.path_to_project_name(ent.path))
-
         homedirs.sort()
         self.log.debug(f"homedirs: {homedirs}")
 
@@ -282,7 +290,6 @@ class QuotaManager(Application):
 
         # We have to write /etc/projid & /etc/projects if they aren't completely in sync
         projid_file_dirty = sorted(projects.keys()) != sorted(homedirs)
-
         if projid_file_dirty:
             # Make sure /etc/projid & /etc/projects are in sync with home dirs
             for home in homedirs:
@@ -301,10 +308,9 @@ class QuotaManager(Application):
             ):
                 projects_file.write(OWNERSHIP_PREAMBLE)
                 projid_file.write(OWNERSHIP_PREAMBLE)
-                for project_name, project_id in projects.items():
-                    print(project_name)
-                    project_path = self.project_name_to_path(project_name)
-                    projid_file.write(f"{project_name}:{project_id}\n")
+                for project, project_id in projects.items():
+                    project_path = self.project_name_to_path(project)
+                    projid_file.write(f"{project}:{project_id}\n")
                     projects_file.write(f"{project_id}:{project_path}\n")
 
             self.log.debug(
@@ -339,7 +345,6 @@ class QuotaManager(Application):
             )
 
             return {}
-
         return {
             typing.cast(ProjectName, name): int(projid)
             for projid, _, name in (
@@ -456,7 +461,6 @@ class QuotaManager(Application):
 
         self.update_metrics(applied_quotas)
         self.log.debug(f"Applied quotas: {applied_quotas}")
-
         # Set quotas based on priority: quota_overrides > exclude_dirs > hard_quota_kb
         intended_quotas = {}
         for project in projects:
